@@ -9,6 +9,7 @@ public class PadBuster {
     private int blockSize;
     private Oracle oracle;
     private byte[] iv = null;
+    private int errorCorrectionLevel = 0;
 
     public PadBuster(int blockSize, Oracle oracle) {
         this.blockSize = blockSize;
@@ -28,8 +29,18 @@ public class PadBuster {
 
         for (int i = (int) Math.floor((double) enc.length / blockSize); i > 1; i--) {
             byte[] copy = Arrays.copyOf(enc, i * blockSize);
-            byte[] block = bustPadding(i - 1, copy);
-            System.arraycopy(block, 0, decoded, 16 * (i - 1), blockSize);
+            try {
+                byte[] block = bustPadding(i - 1, copy);
+                System.arraycopy(block, 0, decoded, 16 * (i - 1), blockSize);
+            } catch (IllegalStateException e) {
+                if(errorCorrectionLevel == 2) {
+                    throw e;
+                }
+
+                System.out.println("Resetting");
+                errorCorrectionLevel++;
+                i++;
+            }
         }
 
         byte[] result = removePadding(decoded);
@@ -56,6 +67,7 @@ public class PadBuster {
             byte c1 = enc[enc.length - 1 - i - blockSize];
             byte p2d = (byte) (i + 1);
             byte c1d = guessByte(enc, blockNum, enc.length - 1 - i - blockSize);
+            errorCorrectionLevel = 0;
 
             i2[blockSize - i - 1] = (byte) (c1d ^ p2d);
             p2[blockSize - i - 1] = (byte) (c1 ^ i2[blockSize - i - 1]);
@@ -74,6 +86,7 @@ public class PadBuster {
 
     private byte guessByte(byte[] enc, int blockNum, int place) {
         byte[] copy = Arrays.copyOf(enc, enc.length);
+        int errorCorrection = errorCorrectionLevel;
 
         for (int i = blockSize * (blockNum - 1); i < place; i++) {
             copy[i] = 0;
@@ -83,7 +96,11 @@ public class PadBuster {
             copy[place] = (byte) i;
 
             if(oracle.tryDecrypt(copy)) {
-                return (byte) i;
+                if(errorCorrection == 0) {
+                    return (byte) i;
+                } else {
+                    errorCorrection--;
+                }
             }
         }
 
